@@ -560,3 +560,237 @@ body {
     background: rgba(255, 255, 255, 0.1);
     border-radius: 50%;
 }
+
+
+
+
+/* 📁 styles.css - AGREGAR ESTOS ESTILOS NUEVOS */
+
+/* Estadísticas de exploración */
+.exploration-stats {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid rgba(55, 65, 81, 0.5);
+}
+
+/* Resultados de búsqueda */
+.search-results {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.search-result-item {
+    background: rgba(31, 41, 55, 0.6);
+    border: 1px solid rgba(55, 65, 81, 0.3);
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 10px;
+}
+
+.result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.result-header h4 {
+    color: #60A5FA;
+    margin: 0;
+}
+
+.result-distance {
+    background: rgba(59, 130, 246, 0.2);
+    color: #93C5FD;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+}
+
+.result-details {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.detail {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+}
+
+.detail .label {
+    color: #9CA3AF;
+}
+
+.detail .value {
+    color: #E5E7EB;
+    font-weight: 500;
+}
+
+.status-owned {
+    color: #3B82F6;
+}
+
+.status-explored {
+    color: #10B981;
+}
+
+.status-unexplored {
+    color: #6B7280;
+}
+
+.result-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-small {
+    padding: 6px 12px;
+    font-size: 12px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    flex: 1;
+}
+
+/* Descubrimientos */
+.discovery-results {
+    text-align: center;
+}
+
+.discovered-systems {
+    margin: 15px 0;
+}
+
+.discovered-system {
+    display: flex;
+    align-items: center;
+    background: rgba(31, 41, 55, 0.6);
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 8px;
+}
+
+.system-badge {
+    font-size: 24px;
+    margin-right: 12px;
+}
+
+.system-info {
+    flex: 1;
+    text-align: left;
+}
+
+.system-details {
+    display: flex;
+    gap: 8px;
+    font-size: 12px;
+    color: #9CA3AF;
+    margin-top: 4px;
+}
+
+.discovery-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    margin-top: 15px;
+}
+
+.stat {
+    background: rgba(55, 65, 81, 0.3);
+    padding: 10px;
+    border-radius: 6px;
+    text-align: center;
+}
+
+.stat-label {
+    display: block;
+    color: #9CA3AF;
+    font-size: 12px;
+}
+
+.stat-value {
+    display: block;
+    color: #10B981;
+    font-size: 18px;
+    font-weight: bold;
+}
+
+/* Sistema de información mejorado */
+.system-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.system-badges {
+    display: flex;
+    gap: 8px;
+}
+
+.badge {
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.badge-owned {
+    background: rgba(59, 130, 246, 0.2);
+    color: #93C5FD;
+}
+
+.badge-explored {
+    background: rgba(16, 185, 129, 0.2);
+    color: #6EE7B7;
+}
+
+.badge-unexplored {
+    background: rgba(107, 114, 128, 0.2);
+    color: #9CA3AF;
+}
+
+.discovery-info {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.discovery-stat {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.action-buttons button {
+    flex: 1;
+}
+
+/* Filtros de búsqueda */
+.filters-section {
+    margin: 15px 0;
+    padding: 15px;
+    background: rgba(31, 41, 55, 0.5);
+    border-radius: 8px;
+}
+
+.filters-section h3 {
+    color: #60A5FA;
+    margin-bottom: 10px;
+    font-size: 14px;
+}
+
+.no-results {
+    text-align: center;
+    padding: 20px;
+    color: #9CA3AF;
+}
