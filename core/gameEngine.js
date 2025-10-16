@@ -2,11 +2,13 @@ class GameEngine {
     constructor() {
         this.firebaseService = new FirebaseService();
         this.authService = new AuthService();
+        this.explorationSystem = new ExplorationSystem(this.firebaseService);
         this.galaxyRenderer = null;
         this.uiManager = null;
         
         this.currentUser = null;
         this.userSystems = [];
+        this.explorableSystems = [];
         this.gameState = {
             galacticYear: 2024,
             isPaused: false,
@@ -18,12 +20,20 @@ class GameEngine {
 
     // 1. Inicialización del juego
     async init() {
-        console.log('Inicializando Galaxia X...');
+        console.log('🚀 Inicializando Galaxia X...');
         
         try {
+            // Mostrar pantalla de carga
+            this.showLoadingScreen();
+            
             // Inicializar Firebase
             await this.firebaseService.initialize();
             this.currentUser = this.firebaseService.currentUser;
+            
+            // Inicializar sistema de exploración
+            if (this.currentUser) {
+                await this.explorationSystem.initialize();
+            }
             
             // Inicializar renderizador
             this.galaxyRenderer = new GalaxyRenderer('galaxyCanvas');
@@ -31,8 +41,8 @@ class GameEngine {
             // Inicializar UI Manager
             this.uiManager = new UIManager(this);
             
-            // Cargar sistemas del usuario
-            await this.loadUserSystems();
+            // Cargar sistemas del usuario y explorables
+            await this.loadAllSystems();
             
             // Configurar listeners en tiempo real
             this.setupRealTimeListeners();
@@ -40,24 +50,40 @@ class GameEngine {
             // Ocultar pantalla de carga
             this.hideLoadingScreen();
             
-            console.log('Juego inicializado correctamente');
+            console.log('✅ Juego inicializado correctamente');
             
         } catch (error) {
-            console.error('Error inicializando el juego:', error);
+            console.error('❌ Error inicializando el juego:', error);
             this.showError('Error al inicializar el juego: ' + error.message);
         }
     }
 
-    // 2. Cargar sistemas del usuario
-    async loadUserSystems() {
-        if (!this.currentUser) return;
+    // 2. Cargar todos los sistemas
+    async loadAllSystems() {
+        if (!this.currentUser) {
+            console.log('🔐 Usuario no autenticado, saltando carga de sistemas');
+            return;
+        }
         
         try {
+            console.log('📥 Cargando sistemas...');
+            
+            // Cargar sistemas del usuario
             this.userSystems = await this.firebaseService.getUserStarSystems();
+            console.log(`✅ Sistemas del usuario: ${this.userSystems.length}`);
+            
+            // Cargar sistemas explorables
+            this.explorableSystems = await this.firebaseService.getExplorableSystems();
+            console.log(`✅ Sistemas explorables: ${this.explorableSystems.length}`);
+            
+            // Actualizar renderizador
             this.galaxyRenderer.updateSystems(this.userSystems);
-            console.log(`Sistemas cargados: ${this.userSystems.length}`);
+            this.galaxyRenderer.updateExplorableSystems(this.explorableSystems);
+            
+            console.log(`🎯 Total de sistemas cargados: ${this.userSystems.length + this.explorableSystems.length}`);
+            
         } catch (error) {
-            console.error('Error cargando sistemas:', error);
+            console.error('❌ Error cargando sistemas:', error);
         }
     }
 
@@ -65,23 +91,44 @@ class GameEngine {
     setupRealTimeListeners() {
         // Escuchar cambios en sistemas del usuario
         this.firebaseService.listenToUserSystems((systems) => {
+            console.log('🔄 Actualizando sistemas del usuario:', systems.length);
             this.userSystems = systems;
             this.galaxyRenderer.updateSystems(systems);
-            this.uiManager.updateSystemsList(systems);
+            if (this.uiManager) {
+                this.uiManager.updateSystemsList(systems);
+            }
+        });
+        
+        // Escuchar sistemas explorables
+        this.firebaseService.listenToExplorableSystems((systems) => {
+            console.log('🔄 Actualizando sistemas explorables:', systems.length);
+            this.explorableSystems = systems;
+            this.galaxyRenderer.updateExplorableSystems(systems);
         });
         
         // Escuchar cambios de autenticación
         this.authService.onAuthStateChanged(async (user) => {
+            console.log('🔐 Cambio de estado de autenticación:', user ? 'Conectado' : 'Desconectado');
+            
             this.currentUser = user;
             this.firebaseService.currentUser = user;
             
             if (user) {
-                await this.loadUserSystems();
-                this.uiManager.updateAuthState(true, user);
+                // Usuario conectado
+                await this.explorationSystem.initialize();
+                await this.loadAllSystems();
+                if (this.uiManager) {
+                    this.uiManager.updateAuthState(true, user);
+                }
             } else {
+                // Usuario desconectado
                 this.userSystems = [];
+                this.explorableSystems = [];
                 this.galaxyRenderer.updateSystems([]);
-                this.uiManager.updateAuthState(false);
+                this.galaxyRenderer.updateExplorableSystems([]);
+                if (this.uiManager) {
+                    this.uiManager.updateAuthState(false);
+                }
             }
         });
     }
@@ -90,10 +137,12 @@ class GameEngine {
     async createStarSystem(systemData) {
         if (!this.currentUser) {
             this.uiManager.showLoginPrompt();
-            return;
+            throw new Error('Usuario no autenticado');
         }
 
         try {
+            console.log('🪐 Creando sistema estelar:', systemData.name);
+            
             // Validar datos del sistema
             if (!this.validateSystemData(systemData)) {
                 throw new Error('Datos del sistema inválidos');
@@ -102,6 +151,7 @@ class GameEngine {
             // Generar coordenadas si no se proporcionan
             if (!systemData.coordinates) {
                 systemData.coordinates = this.generateRandomCoordinates();
+                console.log('📍 Coordenadas generadas:', systemData.coordinates);
             }
 
             // Crear sistema en Firebase
@@ -113,20 +163,12 @@ class GameEngine {
                 systemData.coordinates.y
             );
             
-            // Mostrar mensaje de éxito
-            this.uiManager.showNotification(
-                `Sistema "${systemData.name}" creado exitosamente!`,
-                'success'
-            );
+            console.log('✅ Sistema creado exitosamente:', systemId);
             
             return systemId;
             
         } catch (error) {
-            console.error('Error creando sistema:', error);
-            this.uiManager.showNotification(
-                `Error creando sistema: ${error.message}`,
-                'error'
-            );
+            console.error('❌ Error creando sistema:', error);
             throw error;
         }
     }
@@ -161,45 +203,203 @@ class GameEngine {
         return { x, y };
     }
 
-    // 7. Avanzar tiempo de simulación
+    // 7. Explorar área actual
+    async exploreCurrentArea() {
+        if (!this.currentUser) {
+            this.uiManager.showLoginPrompt();
+            return [];
+        }
+
+        try {
+            console.log('🔭 Iniciando exploración del área...');
+            
+            const viewport = this.galaxyRenderer.getCurrentViewport();
+            console.log('📍 Viewport actual:', viewport);
+            
+            const discoveredSystems = await this.explorationSystem.exploreArea(
+                viewport.centerX, 
+                viewport.centerY, 
+                viewport.radius
+            );
+
+            console.log('✅ Exploración completada. Sistemas descubiertos:', discoveredSystems.length);
+
+            if (discoveredSystems.length > 0) {
+                // Actualizar lista de sistemas explorables
+                this.explorableSystems = await this.firebaseService.getExplorableSystems();
+                this.galaxyRenderer.updateExplorableSystems(this.explorableSystems);
+                
+                // Generar evento aleatorio
+                const event = await this.explorationSystem.generateRandomEvent(discoveredSystems);
+                if (event && this.uiManager) {
+                    this.uiManager.showNotification(`🎉 ${event.message}`, 'info');
+                }
+            }
+
+            return discoveredSystems;
+        } catch (error) {
+            console.error('❌ Error explorando área:', error);
+            throw error;
+        }
+    }
+
+    // 8. Buscar sistemas
+    async searchSystems(query, filters = {}) {
+        if (!this.currentUser) {
+            throw new Error('Usuario no autenticado');
+        }
+
+        try {
+            console.log('🔍 Buscando sistemas:', { query, filters });
+            const results = await this.explorationSystem.searchSystems(query, filters);
+            console.log('✅ Búsqueda completada. Resultados:', results.length);
+            return results;
+        } catch (error) {
+            console.error('❌ Error buscando sistemas:', error);
+            throw error;
+        }
+    }
+
+    // 9. Obtener sistemas populares
+    async getPopularSystems(limit = 10) {
+        if (!this.currentUser) {
+            throw new Error('Usuario no autenticado');
+        }
+
+        try {
+            const popularSystems = await this.explorationSystem.getPopularSystems(limit);
+            console.log('📊 Sistemas populares obtenidos:', popularSystems.length);
+            return popularSystems;
+        } catch (error) {
+            console.error('❌ Error obteniendo sistemas populares:', error);
+            throw error;
+        }
+    }
+
+    // 10. Obtener sistemas recientes
+    async getRecentlyDiscovered(limit = 5) {
+        if (!this.currentUser) {
+            throw new Error('Usuario no autenticado');
+        }
+
+        try {
+            const recentSystems = await this.explorationSystem.getRecentlyDiscovered(limit);
+            console.log('🆕 Sistemas recientes obtenidos:', recentSystems.length);
+            return recentSystems;
+        } catch (error) {
+            console.error('❌ Error obteniendo sistemas recientes:', error);
+            throw error;
+        }
+    }
+
+    // 11. Obtener estadísticas de exploración
+    async getExplorationStats() {
+        if (!this.currentUser) {
+            return {
+                totalSystems: 0,
+                userDiscovered: 0,
+                userCreated: 0,
+                explorationPercentage: 0,
+                discoveryRank: 'Novato'
+            };
+        }
+
+        try {
+            const stats = await this.explorationSystem.getExplorationStats();
+            console.log('📈 Estadísticas de exploración:', stats);
+            return stats;
+        } catch (error) {
+            console.error('❌ Error obteniendo estadísticas:', error);
+            return {
+                totalSystems: 0,
+                userDiscovered: 0,
+                userCreated: 0,
+                explorationPercentage: 0,
+                discoveryRank: 'Novato'
+            };
+        }
+    }
+
+    // 12. Obtener sistemas cercanos
+    async getNearbySystems(maxDistance = 2000) {
+        if (!this.currentUser) {
+            return [];
+        }
+
+        try {
+            const viewport = this.galaxyRenderer.getCurrentViewport();
+            const nearbySystems = await this.explorationSystem.getNearbySystems(
+                viewport.centerX, 
+                viewport.centerY, 
+                maxDistance
+            );
+            console.log('📍 Sistemas cercanos:', nearbySystems.length);
+            return nearbySystems;
+        } catch (error) {
+            console.error('❌ Error obteniendo sistemas cercanos:', error);
+            return [];
+        }
+    }
+
+    // 13. Avanzar tiempo de simulación
     async advanceTime(years = 100) {
-        if (!this.currentUser) return;
+        if (!this.currentUser) {
+            this.uiManager.showNotification('Inicia sesión para avanzar el tiempo', 'warning');
+            return;
+        }
         
         try {
-            this.gameState.galacticYear += years;
-            this.uiManager.updateGalacticYear(this.gameState.galacticYear);
+            console.log('⏩ Avanzando tiempo:', years, 'años');
             
-            // Simular evolución de todos los sistemas
+            this.gameState.galacticYear += years;
+            
+            // Actualizar UI
+            if (this.uiManager) {
+                this.uiManager.updateGalacticYear(this.gameState.galacticYear);
+            }
+            
+            // Simular evolución de todos los sistemas del usuario
             for (const system of this.userSystems) {
                 await this.simulateSystemEvolution(system, years);
             }
             
-            this.uiManager.showNotification(
-                `¡Tiempo avanzado ${years} años! Año galáctico: ${this.gameState.galacticYear}`,
-                'info'
-            );
+            console.log('✅ Tiempo avanzado. Año galáctico:', this.gameState.galacticYear);
+            
+            if (this.uiManager) {
+                this.uiManager.showNotification(
+                    `¡Tiempo avanzado ${years} años! Año galáctico: ${this.gameState.galacticYear}`,
+                    'info'
+                );
+            }
             
         } catch (error) {
-            console.error('Error avanzando tiempo:', error);
-            this.uiManager.showNotification(
-                `Error avanzando tiempo: ${error.message}`,
-                'error'
-            );
+            console.error('❌ Error avanzando tiempo:', error);
+            if (this.uiManager) {
+                this.uiManager.showNotification(
+                    `Error avanzando tiempo: ${error.message}`,
+                    'error'
+                );
+            }
         }
     }
 
-    // 8. Simular evolución del sistema
+    // 14. Simular evolución del sistema
     async simulateSystemEvolution(system, years) {
-        // Evolucionar cada planeta en el sistema
-        for (const planet of system.celestialBodies.planets) {
-            await this.evolvePlanet(planet, years, system);
+        try {
+            // Evolucionar cada planeta en el sistema
+            for (const planet of system.celestialBodies.planets) {
+                await this.evolvePlanet(planet, years, system);
+            }
+            
+            // Actualizar sistema en Firebase
+            await this.updateSystemInFirebase(system);
+            
+        } catch (error) {
+            console.error(`❌ Error evolucionando sistema ${system.basicInfo.name}:`, error);
         }
-        
-        // Actualizar sistema en Firebase
-        await this.updateSystemInFirebase(system);
     }
 
-    // 9. Evolucionar planeta
+    // 15. Evolucionar planeta
     async evolvePlanet(planet, years, system) {
         // Calcular tasa de evolución
         const evolutionRate = CivilizationEvolution.calculateEvolutionRate(planet, years);
@@ -232,7 +432,7 @@ class GameEngine {
         this.simulateEnvironmentalChanges(planet, years, system);
     }
 
-    // 10. Simular consumo de recursos
+    // 16. Simular consumo de recursos
     simulateResourceConsumption(planet, years) {
         if (!planet.resources) return;
         
@@ -250,7 +450,7 @@ class GameEngine {
         });
     }
 
-    // 11. Simular cambios ambientales
+    // 17. Simular cambios ambientales
     simulateEnvironmentalChanges(planet, years, system) {
         if (!planet.conditions) return;
         
@@ -266,7 +466,7 @@ class GameEngine {
         }
     }
 
-    // 12. Calcular cambio en habitabilidad
+    // 18. Calcular cambio en habitabilidad
     calculateHabitabilityChange(planet, system, years) {
         let change = 0;
         
@@ -288,7 +488,7 @@ class GameEngine {
         return change;
     }
 
-    // 13. Manejar crisis planetarias
+    // 19. Manejar crisis planetarias
     handlePlanetaryCrises(planet, crises) {
         crises.forEach(crisis => {
             switch (crisis.type) {
@@ -302,7 +502,7 @@ class GameEngine {
         });
     }
 
-    // 14. Manejar crisis de recursos
+    // 20. Manejar crisis de recursos
     handleResourceCrisis(planet, crisis) {
         // Reducir felicidad y estabilidad
         planet.civilization.happiness -= 20;
@@ -312,20 +512,20 @@ class GameEngine {
         planet.civilization.happiness = Math.max(0, planet.civilization.happiness);
         planet.civilization.stability = Math.max(0, planet.civilization.stability);
         
-        console.log(`Crisis de recursos en ${planet.name}: ${crisis.message}`);
+        console.log(`⚠️ Crisis de recursos en ${planet.name}: ${crisis.message}`);
     }
 
-    // 15. Manejar crisis ambiental
+    // 21. Manejar crisis ambiental
     handleEnvironmentalCrisis(planet, crisis) {
         // Impacto severo en la civilización
         planet.civilization.happiness -= 30;
         planet.civilization.stability -= 25;
         planet.civilization.population = Math.floor(planet.civilization.population * 0.8);
         
-        console.log(`Crisis ambiental en ${planet.name}: ${crisis.message}`);
+        console.log(`🌪️ Crisis ambiental en ${planet.name}: ${crisis.message}`);
     }
 
-    // 16. Actualizar sistema en Firebase
+    // 22. Actualizar sistema en Firebase
     async updateSystemInFirebase(system) {
         try {
             await this.firebaseService.db.collection('starSystems')
@@ -335,25 +535,11 @@ class GameEngine {
                     updated: new Date()
                 });
         } catch (error) {
-            console.error('Error actualizando sistema:', error);
+            console.error('❌ Error actualizando sistema:', error);
         }
     }
 
-    // 17. Ocultar pantalla de carga
-    hideLoadingScreen() {
-        const loadingScreen = document.getElementById('loadingScreen');
-        if (loadingScreen) {
-            loadingScreen.style.display = 'none';
-        }
-    }
-
-    // 18. Mostrar error
-    showError(message) {
-        console.error(message);
-        this.uiManager.showNotification(message, 'error');
-    }
-
-    // 19. Obtener estadísticas del jugador
+    // 23. Obtener estadísticas del jugador
     getPlayerStats() {
         if (!this.currentUser) return null;
         
@@ -384,18 +570,45 @@ class GameEngine {
         return stats;
     }
 
-    // 20. Centrar galaxia
+    // 24. Centrar galaxia
     centerGalaxy() {
         if (this.galaxyRenderer) {
             this.galaxyRenderer.centerGalaxy();
         }
     }
 
-    // 21. Destruir instancia (cleanup)
+    // 25. Mostrar pantalla de carga
+    showLoadingScreen() {
+        const loadingScreen = document.getElementById('loadingScreen');
+        if (loadingScreen) {
+            loadingScreen.style.display = 'flex';
+        }
+    }
+
+    // 26. Ocultar pantalla de carga
+    hideLoadingScreen() {
+        const loadingScreen = document.getElementById('loadingScreen');
+        if (loadingScreen) {
+            loadingScreen.style.display = 'none';
+        }
+    }
+
+    // 27. Mostrar error
+    showError(message) {
+        console.error('❌ Error:', message);
+        if (this.uiManager) {
+            this.uiManager.showNotification(message, 'error');
+        }
+    }
+
+    // 28. Destruir instancia (cleanup)
     destroy() {
         if (this.firebaseService) {
             this.firebaseService.cleanup();
         }
-        console.log('GameEngine destruido');
+        console.log('🛑 GameEngine destruido');
     }
 }
+
+// Hacer disponible globalmente para debugging
+window.GameEngine = GameEngine;
