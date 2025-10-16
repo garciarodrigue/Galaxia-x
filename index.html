@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Galaxia X - Universo Científico</title>
+    <link rel="stylesheet" href="styles.css">
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+</head>
+<body>
+    <!-- Canvas para la galaxia -->
+    <canvas id="galaxyCanvas"></canvas>
+
+    <!-- UI Principal -->
+    <div id="ui" class="ui-container">
+        <div class="panel">
+            <div class="header">
+                <div class="status-indicator"></div>
+                <h1>Galaxia X</h1>
+            </div>
+            
+            <div class="player-info">
+                <div class="info-row">
+                    <span>Nivel:</span>
+                    <span id="playerLevel">1</span>
+                </div>
+                <div class="info-row">
+                    <span>Kardashev:</span>
+                    <span id="playerKardashev">0.7</span>
+                </div>
+                <div class="info-row">
+                    <span>Mundos:</span>
+                    <span id="playerWorlds">1</span>
+                </div>
+                <div class="info-row">
+                    <span>Año Galáctico:</span>
+                    <span id="galacticYear">2024</span>
+                </div>
+            </div>
+
+            <div class="button-group">
+                <button id="createSystemBtn" class="btn-primary">🪐 Crear Sistema</button>
+                <button id="centerGalaxyBtn" class="btn-secondary">🎯 Centrar Galaxia</button>
+                <button id="advanceTimeBtn" class="btn-secondary">⏩ Avanzar 100 Años</button>
+                <button id="loginBtn" class="btn-auth">🔐 Iniciar Sesión</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Crear Sistema -->
+    <div id="createSystemModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>🌌 Crear Sistema Estelar</h2>
+                <button id="closeModal" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Formulario se llena dinámicamente -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Info Sistema -->
+    <div id="systemInfoModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="systemModalTitle">Sistema Estelar</h2>
+                <button id="closeSystemModal" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body" id="systemInfoContent">
+                <!-- Información del sistema -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Screen -->
+    <div id="loadingScreen" class="loading-screen">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <p>Cargando Universo...</p>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="config/firebase-config.js"></script>
+    <script src="physics/constants.js"></script>
+    <script src="physics/orbitalMechanics.js"></script>
+    <script src="physics/climateModel.js"></script>
+    <script src="physics/stellarEvolution.js"></script>
+    <script src="game/celestialDynamics.js"></script>
+    <script src="game/civilizationEvolution.js"></script>
+    <script src="utils/mathUtils.js"></script>
+    <script src="utils/vector3.js"></script>
+    <script src="services/firebase-service.js"></script>
+    <script src="services/auth-service.js"></script>
+    <script src="core/galaxyRenderer.js"></script>
+    <script src="core/gameEngine.js"></script>
+    <script src="core/uiManager.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>
