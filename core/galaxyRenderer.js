@@ -9,6 +9,7 @@ class GalaxyRenderer {
 
         this.stars = [];
         this.systems = [];
+        this.explorableSystems = [];
         this.selectedSystem = null;
         
         this.offsetX = 25000;
@@ -122,8 +123,10 @@ class GalaxyRenderer {
         const mouseX = e.clientX;
         const mouseY = e.clientY;
 
-        // Buscar sistema clickeado
-        for (const system of this.systems) {
+        // Buscar sistema clickeado (primero en sistemas del usuario, luego explorables)
+        const allSystems = [...this.systems, ...this.explorableSystems];
+        
+        for (const system of allSystems) {
             const x = (system.basicInfo.coordinates.x - this.offsetX) * this.scale;
             const y = (system.basicInfo.coordinates.y - this.offsetY) * this.scale;
             
@@ -154,13 +157,18 @@ class GalaxyRenderer {
         this.systems = systems;
     }
 
-    // 9. Bucle de animación
+    // 9. Actualizar sistemas explorables
+    updateExplorableSystems(systems) {
+        this.explorableSystems = systems;
+    }
+
+    // 10. Bucle de animación
     animate() {
         this.draw();
         requestAnimationFrame(() => this.animate());
     }
 
-    // 10. Dibujar escena
+    // 11. Dibujar escena
     draw() {
         // Limpiar canvas
         this.ctx.fillStyle = '#000000';
@@ -169,16 +177,22 @@ class GalaxyRenderer {
         // Dibujar estrellas de fondo
         this.drawBackgroundStars();
 
-        // Dibujar sistemas estelares
+        // Dibujar sistemas explorables (grises - no descubiertos)
+        this.drawExplorableSystems();
+
+        // Dibujar sistemas del usuario y descubiertos
         this.drawStarSystems();
 
         // Dibujar sistema seleccionado
         if (this.selectedSystem) {
             this.drawSelectedSystem();
         }
+
+        // Dibujar UI de exploración
+        this.drawExplorationUI();
     }
 
-    // 11. Dibujar estrellas de fondo
+    // 12. Dibujar estrellas de fondo
     drawBackgroundStars() {
         const time = Date.now() * 0.001;
         
@@ -198,9 +212,9 @@ class GalaxyRenderer {
         });
     }
 
-    // 12. Dibujar sistemas estelares
-    drawStarSystems() {
-        this.systems.forEach(system => {
+    // 13. Dibujar sistemas explorables (no descubiertos)
+    drawExplorableSystems() {
+        this.explorableSystems.forEach(system => {
             const x = (system.basicInfo.coordinates.x - this.offsetX) * this.scale;
             const y = (system.basicInfo.coordinates.y - this.offsetY) * this.scale;
             
@@ -208,41 +222,162 @@ class GalaxyRenderer {
                 return;
             }
 
-            // Color basado en tipo de estrella
-            const starType = system.physics.primaryStar.type;
-            const color = STAR_TYPES[starType]?.color || '#FFFFFF';
+            // Solo mostrar sistemas no descubiertos por el usuario
+            const isDiscovered = system.discovery?.discoverers?.includes(
+                window.gameEngine?.firebaseService?.currentUser?.uid
+            );
             
-            // Tamaño basado en masa estelar
-            const size = Math.max(2, Math.min(10, system.physics.primaryStar.mass * 5 * this.scale));
+            if (isDiscovered) return;
+
+            // Sistema no descubierto - punto gris tenue
+            const size = Math.max(1, 3 * this.scale);
+            this.ctx.fillStyle = 'rgba(107, 114, 128, 0.3)';
+            this.ctx.beginPath();
+            this.ctx.arc(x, y, size, 0, Math.PI * 2);
+            this.ctx.fill();
+        });
+    }
+
+    // 14. Dibujar sistemas estelares (del usuario y descubiertos)
+    drawStarSystems() {
+        const allSystems = [...this.systems, ...this.explorableSystems.filter(sys => 
+            sys.discovery?.discoverers?.includes(window.gameEngine?.firebaseService?.currentUser?.uid)
+        )];
+
+        allSystems.forEach(system => {
+            const x = (system.basicInfo.coordinates.x - this.offsetX) * this.scale;
+            const y = (system.basicInfo.coordinates.y - this.offsetY) * this.scale;
             
-            // Dibujar estrella
+            if (x < -50 || y < -50 || x > this.width + 50 || y > this.height + 50) {
+                return;
+            }
+
+            // COLOR BASADO EN PROPIEDAD Y DESCUBRIMIENTO
+            const color = this.getSystemColor(system);
+            const size = this.getSystemSize(system);
+            
+            // Dibujar sistema
             this.ctx.fillStyle = color;
             this.ctx.beginPath();
             this.ctx.arc(x, y, size, 0, Math.PI * 2);
             this.ctx.fill();
 
-            // Efecto de brillo para sistemas del usuario
-            if (system.ownership.ownerId === window.gameEngine.firebaseService.currentUser?.uid) {
-                this.ctx.strokeStyle = '#3B82F6';
-                this.ctx.lineWidth = 2;
-                this.ctx.setLineDash([5, 5]);
-                this.ctx.beginPath();
-                this.ctx.arc(x, y, size + 5, 0, Math.PI * 2);
-                this.ctx.stroke();
-                this.ctx.setLineDash([]);
-            }
-
-            // Nombre del sistema (solo con zoom suficiente)
-            if (this.scale > 0.5) {
-                this.ctx.fillStyle = '#FFFFFF';
-                this.ctx.font = `${10 * this.scale}px Arial`;
-                this.ctx.textAlign = 'center';
-                this.ctx.fillText(system.basicInfo.name, x, y + size + 15);
+            // INDICADORES VISUALES
+            this.drawSystemIndicators(system, x, y);
+            
+            // NOMBRE (condicional)
+            if (this.shouldShowSystemName(system)) {
+                this.drawSystemName(system, x, y, size);
             }
         });
     }
 
-    // 13. Dibujar sistema seleccionado
+    // 15. Obtener color del sistema
+    getSystemColor(system) {
+        const currentUser = window.gameEngine?.firebaseService?.currentUser;
+        if (!currentUser) return '#6B7280';
+
+        const isOwned = system.ownership.ownerId === currentUser.uid;
+        const isDiscovered = system.discovery?.discoverers?.includes(currentUser.uid);
+        
+        if (isOwned) return '#3B82F6'; // Azul - tus sistemas
+        if (isDiscovered) return '#10B981'; // Verde - sistemas explorados
+        return '#6B7280'; // Gris - sistemas no descubiertos
+    }
+
+    // 16. Obtener tamaño del sistema
+    getSystemSize(system) {
+        const baseSize = Math.max(2, Math.min(10, system.physics.primaryStar.mass * 5 * this.scale));
+        
+        // Sistemas con civilizaciones son más grandes
+        const hasCivilization = system.celestialBodies?.planets?.some(p => p.civilization);
+        if (hasCivilization) {
+            return baseSize * 1.5;
+        }
+        
+        return baseSize;
+    }
+
+    // 17. Dibujar indicadores del sistema
+    drawSystemIndicators(system, x, y) {
+        const currentUser = window.gameEngine?.firebaseService?.currentUser;
+        if (!currentUser) return;
+
+        const isOwned = system.ownership.ownerId === currentUser.uid;
+        const isDiscovered = system.discovery?.discoverers?.includes(currentUser.uid);
+        const hasCivilization = system.celestialBodies?.planets?.some(p => p.civilization);
+        
+        // Borde de propiedad
+        if (isOwned) {
+            this.ctx.strokeStyle = '#3B82F6';
+            this.ctx.lineWidth = 2;
+            this.ctx.beginPath();
+            this.ctx.arc(x, y, 15, 0, Math.PI * 2);
+            this.ctx.stroke();
+        }
+        // Borde de descubrimiento
+        else if (isDiscovered) {
+            this.ctx.strokeStyle = '#10B981';
+            this.ctx.lineWidth = 1;
+            this.ctx.setLineDash([2, 2]);
+            this.ctx.beginPath();
+            this.ctx.arc(x, y, 12, 0, Math.PI * 2);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+        }
+
+        // Indicador de civilización
+        if (hasCivilization) {
+            this.ctx.fillStyle = '#F59E0B';
+            this.ctx.beginPath();
+            this.ctx.arc(x + 8, y - 8, 3, 0, Math.PI * 2);
+            this.ctx.fill();
+        }
+
+        // Indicador de sistema popular (muchos descubridores)
+        const popularity = system.discovery?.discoverers?.length || 0;
+        if (popularity > 5) {
+            this.ctx.fillStyle = '#EC4899';
+            this.ctx.beginPath();
+            this.ctx.arc(x - 8, y - 8, 2, 0, Math.PI * 2);
+            this.ctx.fill();
+        }
+    }
+
+    // 18. Decidir si mostrar nombre del sistema
+    shouldShowSystemName(system) {
+        const currentUser = window.gameEngine?.firebaseService?.currentUser;
+        if (!currentUser) return false;
+
+        const isOwned = system.ownership.ownerId === currentUser.uid;
+        const isDiscovered = system.discovery?.discoverers?.includes(currentUser.uid);
+        
+        // Mostrar nombre si: es tuyo, está descubierto, o el zoom es suficiente
+        return isOwned || isDiscovered || this.scale > 0.8;
+    }
+
+    // 19. Dibujar nombre del sistema
+    drawSystemName(system, x, y, size) {
+        const currentUser = window.gameEngine?.firebaseService?.currentUser;
+        const isOwned = system.ownership.ownerId === currentUser?.uid;
+        
+        this.ctx.fillStyle = isOwned ? '#3B82F6' : '#FFFFFF';
+        this.ctx.font = `${10 * this.scale}px Arial`;
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText(system.basicInfo.name, x, y + size + 15);
+
+        // Información adicional con buen zoom
+        if (this.scale > 1.2) {
+            this.ctx.fillStyle = '#9CA3AF';
+            this.ctx.font = `${8 * this.scale}px Arial`;
+            this.ctx.fillText(
+                `${system.publicInfo.planetCount} planetas • ${system.publicInfo.starType.replace('_', ' ')}`,
+                x, y + size + 28
+            );
+        }
+    }
+
+    // 20. Dibujar sistema seleccionado
     drawSelectedSystem() {
         const system = this.selectedSystem;
         const x = (system.basicInfo.coordinates.x - this.offsetX) * this.scale;
@@ -257,38 +392,81 @@ class GalaxyRenderer {
 
         // Información del sistema
         if (this.scale > 0.3) {
-            this.ctx.fillStyle = '#10B981';
-            this.ctx.font = '14px Arial';
-            this.ctx.textAlign = 'center';
-            this.ctx.fillText(system.basicInfo.name, x, y - 25);
-            
-            this.ctx.fillStyle = '#9CA3AF';
-            this.ctx.font = '12px Arial';
-            this.ctx.fillText(
-                `Tipo: ${system.physics.primaryStar.type.replace('_', ' ')}`,
-                x, y - 10
-            );
-            this.ctx.fillText(
-                `Planetas: ${system.celestialBodies.planets.length}`,
-                x, y + 35
-            );
+            this.drawSystemTooltip(system, x, y);
         }
     }
 
-    // 14. Centrar en coordenadas
+    // 21. Dibujar tooltip del sistema
+    drawSystemTooltip(system, x, y) {
+        const currentUser = window.gameEngine?.firebaseService?.currentUser;
+        const isOwned = system.ownership.ownerId === currentUser?.uid;
+        const isDiscovered = system.discovery?.discoverers?.includes(currentUser?.uid);
+        
+        this.ctx.fillStyle = '#10B981';
+        this.ctx.font = '14px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText(system.basicInfo.name, x, y - 25);
+        
+        this.ctx.fillStyle = '#9CA3AF';
+        this.ctx.font = '12px Arial';
+        
+        if (isOwned) {
+            this.ctx.fillText('★ Tu Sistema', x, y - 10);
+        } else if (isDiscovered) {
+            const discoverers = system.discovery.discoverers.length;
+            this.ctx.fillText(`👥 ${discoverers} explorador${discoverers > 1 ? 'es' : ''}`, x, y - 10);
+        } else {
+            this.ctx.fillText('🔍 Sin explorar', x, y - 10);
+        }
+        
+        this.ctx.fillText(
+            `Planetas: ${system.publicInfo.planetCount} | ${system.publicInfo.starType.replace('_', ' ')}`,
+            x, y + 35
+        );
+    }
+
+    // 22. Dibujar UI de exploración
+    drawExplorationUI() {
+        const explorableCount = this.explorableSystems.filter(system => 
+            !system.discovery?.discoverers?.includes(window.gameEngine?.firebaseService?.currentUser?.uid)
+        ).length;
+
+        // Contador de sistemas explorables en el área visible
+        if (explorableCount > 0 && this.scale < 1) {
+            this.ctx.fillStyle = 'rgba(59, 130, 246, 0.9)';
+            this.ctx.fillRect(10, 10, 200, 40);
+            
+            this.ctx.fillStyle = 'white';
+            this.ctx.font = '12px Arial';
+            this.ctx.textAlign = 'left';
+            this.ctx.fillText(`🔍 ${explorableCount} sistemas por explorar`, 20, 30);
+            this.ctx.fillText('Haz clic en "Explorar Área"', 20, 45);
+        }
+    }
+
+    // 23. Centrar en coordenadas
     centerOn(x, y) {
         this.offsetX = x - this.width / 2 / this.scale;
         this.offsetY = y - this.height / 2 / this.scale;
     }
 
-    // 15. Centrar galaxia
+    // 24. Centrar galaxia
     centerGalaxy() {
         this.offsetX = 25000 - this.width / 2 / this.scale;
         this.offsetY = 25000 - this.height / 2 / this.scale;
         this.scale = 0.3;
     }
 
-    // 16. Callback cuando se selecciona un sistema
+    // 25. Obtener posición actual del viewport
+    getCurrentViewport() {
+        const centerX = this.offsetX + (this.width / 2) / this.scale;
+        const centerY = this.offsetY + (this.height / 2) / this.scale;
+        const radius = Math.max(this.width, this.height) / this.scale / 2;
+        
+        return { centerX, centerY, radius };
+    }
+
+    // 26. Callback cuando se selecciona un sistema
     onSystemSelected(system) {
         if (window.gameEngine && window.gameEngine.uiManager) {
             window.gameEngine.uiManager.showSystemInfo(system);
