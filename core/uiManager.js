@@ -127,13 +127,13 @@ class UIManager {
                                 <div class="discovered-system">
                                     <div class="system-badge">⭐</div>
                                     <div class="system-info">
-                                        <strong>${system.basicInfo.name}</strong>
+                                        <strong>${system.basicInfo?.name || 'Sistema Desconocido'}</strong>
                                         <div class="system-details">
-                                            <span>${system.publicInfo.starType.replace('_', ' ')}</span>
+                                            <span>${(system.publicInfo?.starType || 'enana_amarilla').replace('_', ' ')}</span>
                                             <span>•</span>
-                                            <span>${system.publicInfo.planetCount} planetas</span>
+                                            <span>${system.publicInfo?.planetCount || 0} planetas</span>
                                             <span>•</span>
-                                            <span>${system.publicInfo.resources}</span>
+                                            <span>${system.publicInfo?.resources || 'Recursos básicos'}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -273,21 +273,21 @@ class UIManager {
         resultsContainer.innerHTML = results.map(system => `
             <div class="search-result-item" data-system-id="${system.id}">
                 <div class="result-header">
-                    <h4>${system.basicInfo.name}</h4>
+                    <h4>${system.basicInfo?.name || 'Sistema Sin Nombre'}</h4>
                     <span class="result-distance">${this.calculateDistance(system)} UA</span>
                 </div>
                 <div class="result-details">
                     <div class="detail">
                         <span class="label">Estrella:</span>
-                        <span class="value">${system.publicInfo.starType.replace('_', ' ')}</span>
+                        <span class="value">${(system.publicInfo?.starType || 'enana_amarilla').replace('_', ' ')}</span>
                     </div>
                     <div class="detail">
                         <span class="label">Planetas:</span>
-                        <span class="value">${system.publicInfo.planetCount}</span>
+                        <span class="value">${system.publicInfo?.planetCount || 0}</span>
                     </div>
                     <div class="detail">
                         <span class="label">Descubridores:</span>
-                        <span class="value">${system.discovery.discoverers.length}</span>
+                        <span class="value">${system.discovery?.discoverers?.length || 0}</span>
                     </div>
                     <div class="detail">
                         <span class="label">Estado:</span>
@@ -388,15 +388,15 @@ class UIManager {
         statsElement.innerHTML = `
             <div class="info-row">
                 <span class="text-gray-300">Rango:</span>
-                <span class="font-bold text-purple-400">${stats.discoveryRank}</span>
+                <span class="font-bold text-purple-400">${stats.discoveryRank || 'Novato'}</span>
             </div>
             <div class="info-row">
                 <span class="text-gray-300">Explorado:</span>
-                <span class="font-bold text-green-400">${stats.userDiscovered}/${stats.totalSystems}</span>
+                <span class="font-bold text-green-400">${stats.userDiscovered || 0}/${stats.totalSystems || 0}</span>
             </div>
             <div class="info-row">
                 <span class="text-gray-300">Progreso:</span>
-                <span class="font-bold text-blue-400">${stats.explorationPercentage.toFixed(1)}%</span>
+                <span class="font-bold text-blue-400">${(stats.explorationPercentage || 0).toFixed(1)}%</span>
             </div>
         `;
     }
@@ -405,9 +405,10 @@ class UIManager {
     calculateDistance(system) {
         // Distancia simplificada desde el centro de la galaxia
         const centerX = 25000, centerY = 25000;
+        const coords = system.basicInfo?.coordinates || { x: centerX, y: centerY };
         const distance = Math.sqrt(
-            Math.pow(system.basicInfo.coordinates.x - centerX, 2) +
-            Math.pow(system.basicInfo.coordinates.y - centerY, 2)
+            Math.pow(coords.x - centerX, 2) +
+            Math.pow(coords.y - centerY, 2)
         );
         return Math.floor(distance / 1000);
     }
@@ -417,8 +418,8 @@ class UIManager {
         const currentUser = this.gameEngine.currentUser;
         if (!currentUser) return 'No explorado';
         
-        if (system.ownership.ownerId === currentUser.uid) return 'Tu sistema';
-        if (system.discovery.discoverers.includes(currentUser.uid)) return 'Explorado';
+        if (system.ownership?.ownerId === currentUser.uid) return 'Tu sistema';
+        if (system.discovery?.discoverers?.includes(currentUser.uid)) return 'Explorado';
         return 'No explorado';
     }
 
@@ -559,14 +560,13 @@ class UIManager {
         const starType = document.getElementById('starType').value;
         const starMass = parseFloat(document.getElementById('starMass').value);
         
-        const starInfo = STAR_TYPES[starType];
+        const starInfo = STAR_TYPES?.[starType];
         if (!starInfo) return;
 
         // Calcular luminosidad y tiempo de vida
-        const luminosity = StellarEvolution.calculateLuminosity(starMass, 4500);
-        const lifespan = StellarEvolution.calculateMainSequenceLifetime(starMass);
+        const luminosity = StellarEvolution?.calculateLuminosity?.(starMass, 4500) || starMass;
+        const lifespan = StellarEvolution?.calculateMainSequenceLifetime?.(starMass) || (1e10 / starMass);
         
-        // Podrías mostrar esta información en un tooltip o elemento aparte
         console.log(`Estrella: ${starType}, Luminosidad: ${luminosity.toFixed(2)} L☉, Vida: ${(lifespan/1e9).toFixed(1)} Ga`);
     }
 
@@ -629,16 +629,16 @@ class UIManager {
 
     // 25. Generar contenido de información del sistema
     generateSystemInfoContent(system) {
-        const star = system.physics.primaryStar;
-        const planets = system.celestialBodies.planets;
+        const star = system.physics?.primaryStar || { type: 'enana_amarilla', mass: 1, age: 4500, luminosity: 1 };
+        const planets = system.celestialBodies?.planets || [];
         const currentUser = this.gameEngine.currentUser;
-        const isOwned = system.ownership.ownerId === currentUser?.uid;
+        const isOwned = system.ownership?.ownerId === currentUser?.uid;
         const isDiscovered = system.discovery?.discoverers?.includes(currentUser?.uid);
         
         return `
             <div class="system-info">
                 <div class="system-header">
-                    <h2>${system.basicInfo.name}</h2>
+                    <h2>${system.basicInfo?.name || 'Sistema Sin Nombre'}</h2>
                     <div class="system-badges">
                         ${isOwned ? '<span class="badge badge-owned">★ Tu Sistema</span>' : ''}
                         ${isDiscovered && !isOwned ? '<span class="badge badge-explored">🔍 Explorado</span>' : ''}
@@ -673,22 +673,25 @@ class UIManager {
                     <div class="discovery-info">
                         <div class="discovery-stat">
                             <span class="label">Descubridores:</span>
-                            <span class="value">${system.discovery.discoverers.length}</span>
+                            <span class="value">${system.discovery?.discoverers?.length || 0}</span>
                         </div>
                         <div class="discovery-stat">
                             <span class="label">Fecha:</span>
-                            <span class="value">${new Date(system.discovery.discoveryDate).toLocaleDateString()}</span>
+                            <span class="value">${system.discovery?.discoveryDate ? new Date(system.discovery.discoveryDate).toLocaleDateString() : 'No descubierto'}</span>
                         </div>
                         <div class="discovery-stat">
                             <span class="label">Estado:</span>
-                            <span class="value">${system.discovery.status}</span>
+                            <span class="value">${system.discovery?.status || 'Sin explorar'}</span>
                         </div>
                     </div>
                 </div>
 
                 <div class="info-section">
                     <h3>🪐 Planetas del Sistema (${planets.length})</h3>
-                    ${planets.map(planet => this.generatePlanetInfo(planet)).join('')}
+                    ${planets.length > 0 ? 
+                        planets.map(planet => this.generatePlanetInfo(planet)).join('') : 
+                        '<p>No hay planetas en este sistema.</p>'
+                    }
                 </div>
 
                 <div class="action-buttons">
@@ -714,30 +717,30 @@ class UIManager {
         return `
             <div class="planet-card">
                 <div class="planet-header">
-                    <h4>${planet.name}</h4>
-                    <span class="planet-type">${planet.type}</span>
+                    <h4>${planet.name || 'Planeta Sin Nombre'}</h4>
+                    <span class="planet-type">${planet.type || 'Terrestre'}</span>
                 </div>
                 <div class="planet-details">
                     <div class="planet-stat">
                         <span>Distancia:</span>
-                        <span>${planet.orbit.semiMajorAxis.toFixed(2)} AU</span>
+                        <span>${(planet.orbit?.semiMajorAxis || 1).toFixed(2)} AU</span>
                     </div>
                     <div class="planet-stat">
                         <span>Habitabilidad:</span>
-                        <span>${(planet.conditions.habitability * 100).toFixed(0)}%</span>
+                        <span>${((planet.conditions?.habitability || 0) * 100).toFixed(0)}%</span>
                     </div>
                     ${civ ? `
                         <div class="planet-stat">
                             <span>Población:</span>
-                            <span>${this.formatPopulation(civ.population)}</span>
+                            <span>${this.formatPopulation(civ.population || 0)}</span>
                         </div>
                         <div class="planet-stat">
                             <span>Kardashev:</span>
-                            <span>${civ.kardashev.level.toFixed(2)}</span>
+                            <span>${(civ.kardashev?.level || 0).toFixed(2)}</span>
                         </div>
                         <div class="planet-stat">
                             <span>Gobierno:</span>
-                            <span>${civ.government.type.replace('_', ' ')}</span>
+                            <span>${(civ.government?.type || 'democratica').replace('_', ' ')}</span>
                         </div>
                     ` : `
                         <div class="planet-stat">
@@ -966,6 +969,7 @@ class UIManager {
     // 32. Mostrar prompt de login
     showLoginPrompt() {
         this.showNotification('🔐 Por favor inicia sesión para explorar', 'info');
+        this.showLoginModal();
     }
 
     // 33. Mostrar modal
@@ -1060,6 +1064,8 @@ class UIManager {
             loginBtn.innerHTML = '👤 ' + (user.displayName || user.email || 'Usuario');
             loginBtn.title = 'Cerrar sesión';
             loginBtn.onclick = () => this.gameEngine.authService.signOut();
+            // Actualizar stats al iniciar sesión
+            this.updateExplorationStats();
         } else {
             loginBtn.innerHTML = '🔐 Iniciar Sesión';
             loginBtn.title = 'Iniciar sesión';
@@ -1077,7 +1083,6 @@ class UIManager {
 
     // 40. Actualizar lista de sistemas
     updateSystemsList(systems) {
-        // Actualizar contador en la UI
         const worldsElement = document.getElementById('playerWorlds');
         if (worldsElement) {
             worldsElement.textContent = systems.length;
@@ -1086,7 +1091,7 @@ class UIManager {
 
     // 41. Mostrar carga
     showLoading(message = 'Cargando...') {
-        // Podrías implementar un spinner o overlay de carga
+        // Implementación básica - podrías usar un spinner
         console.log('Loading:', message);
     }
 
@@ -1095,3 +1100,6 @@ class UIManager {
         console.log('Loading complete');
     }
 }
+
+// Hacer disponible globalmente
+window.UIManager = UIManager;
