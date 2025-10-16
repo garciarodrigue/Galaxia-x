@@ -946,3 +946,152 @@ class UIManager {
                 return;
             }
 
+            try {
+                await this.gameEngine.authService.createUserWithEmail(email, password, username);
+                modal.remove();
+                this.showNotification('¡Cuenta creada exitosamente!', 'success');
+            } catch (error) {
+                this.showNotification(`Error: ${error.message}`, 'error');
+            }
+        });
+
+        // Volver al login
+        modal.querySelector('#showLogin').addEventListener('click', (e) => {
+            e.preventDefault();
+            modal.remove();
+            this.showLoginModal();
+        });
+    }
+
+    // 32. Mostrar prompt de login
+    showLoginPrompt() {
+        this.showNotification('🔐 Por favor inicia sesión para explorar', 'info');
+    }
+
+    // 33. Mostrar modal
+    showModal(modalId) {
+        this.hideCurrentModal();
+        
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.classList.add('active');
+            this.currentModal = modalId;
+        }
+    }
+
+    // 34. Ocultar modal
+    hideModal(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.classList.remove('active');
+            if (this.currentModal === modalId) {
+                this.currentModal = null;
+            }
+        }
+    }
+
+    // 35. Ocultar modal actual
+    hideCurrentModal() {
+        if (this.currentModal) {
+            this.hideModal(this.currentModal);
+        }
+    }
+
+    // 36. Mostrar notificación
+    showNotification(message, type = 'info') {
+        // Crear elemento de notificación
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.innerHTML = `
+            <div class="notification-content">
+                <span class="notification-message">${message}</span>
+                <button class="notification-close">&times;</button>
+            </div>
+        `;
+
+        // Estilos para la notificación
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: ${this.getNotificationColor(type)};
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            z-index: 10000;
+            max-width: 400px;
+            animation: slideIn 0.3s ease-out;
+        `;
+
+        document.body.appendChild(notification);
+
+        // Auto-eliminar después de 5 segundos
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 5000);
+
+        // Cerrar al hacer click
+        notification.querySelector('.notification-close').addEventListener('click', () => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        });
+    }
+
+    // 37. Obtener color de notificación
+    getNotificationColor(type) {
+        const colors = {
+            success: '#10B981',
+            error: '#EF4444',
+            warning: '#F59E0B',
+            info: '#3B82F6'
+        };
+        return colors[type] || colors.info;
+    }
+
+    // 38. Actualizar estado de autenticación
+    updateAuthState(isAuthenticated, user = null) {
+        const loginBtn = document.getElementById('loginBtn');
+        
+        if (isAuthenticated && user) {
+            loginBtn.innerHTML = '👤 ' + (user.displayName || user.email || 'Usuario');
+            loginBtn.title = 'Cerrar sesión';
+            loginBtn.onclick = () => this.gameEngine.authService.signOut();
+        } else {
+            loginBtn.innerHTML = '🔐 Iniciar Sesión';
+            loginBtn.title = 'Iniciar sesión';
+            loginBtn.onclick = () => this.showLoginModal();
+        }
+    }
+
+    // 39. Actualizar año galáctico
+    updateGalacticYear(year) {
+        const yearElement = document.getElementById('galacticYear');
+        if (yearElement) {
+            yearElement.textContent = year;
+        }
+    }
+
+    // 40. Actualizar lista de sistemas
+    updateSystemsList(systems) {
+        // Actualizar contador en la UI
+        const worldsElement = document.getElementById('playerWorlds');
+        if (worldsElement) {
+            worldsElement.textContent = systems.length;
+        }
+    }
+
+    // 41. Mostrar carga
+    showLoading(message = 'Cargando...') {
+        // Podrías implementar un spinner o overlay de carga
+        console.log('Loading:', message);
+    }
+
+    // 42. Ocultar carga
+    hideLoading() {
+        console.log('Loading complete');
+    }
+}
