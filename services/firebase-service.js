@@ -92,7 +92,7 @@ class FirebaseService {
         console.log('Nuevo usuario creado:', userData);
     }
 
-    // 4. Crear sistema estelar
+    // 4. Crear sistema estelar (VERSIÓN MEJORADA)
     async createStarSystem(systemData) {
         if (!this.currentUser) throw new Error('Usuario no autenticado');
 
@@ -104,17 +104,37 @@ class FirebaseService {
                 discoveryDate: new Date(),
                 discoveredBy: this.currentUser.uid,
                 coordinates: {
-                    x: systemData.coordinates.x,
-                    y: systemData.coordinates.y,
-                    quadrant: this.getQuadrant(systemData.coordinates.x, systemData.coordinates.y)
+                    x: systemData.coordinates?.x || this.generateRandomCoordinate(),
+                    y: systemData.coordinates?.y || this.generateRandomCoordinate(),
+                    quadrant: this.getQuadrant(systemData.coordinates?.x, systemData.coordinates?.y)
                 }
             },
+            
+            // NUEVO: Sistema de descubrimiento
+            discovery: {
+                status: 'claimed', // unexplored, discovered, claimed
+                discoverers: [this.currentUser.uid],
+                discoveryDate: new Date(),
+                firstDiscoverer: this.currentUser.uid,
+                explorationPoints: 10
+            },
+            
+            // NUEVO: Información pública
+            publicInfo: {
+                name: systemData.name,
+                starType: systemData.starType,
+                planetCount: systemData.planetsCount,
+                hasCivilization: false,
+                threatLevel: 'low',
+                resources: 'unknown'
+            },
+            
             physics: {
                 primaryStar: {
                     type: systemData.starType,
                     mass: systemData.starMass,
                     age: systemData.starAge,
-                    temperature: STAR_TYPES[systemData.starType].temperature[0],
+                    temperature: STAR_TYPES[systemData.starType]?.temperature?.[0] || 5778,
                     luminosity: StellarEvolution.calculateLuminosity(systemData.starMass, systemData.starAge),
                     spectralClass: this.getSpectralClass(systemData.starType, systemData.starMass)
                 },
@@ -146,7 +166,7 @@ class FirebaseService {
                 ownerId: this.currentUser.uid,
                 access: [this.currentUser.uid],
                 permissions: 'private',
-                discoveryStatus: 'claimed'
+                allianceId: null
             },
             created: new Date(),
             updated: new Date()
@@ -275,83 +295,84 @@ class FirebaseService {
         return planets;
     }
 
-    // 6. Generar lunas para un planeta
-    generateMoons(planetType, planetIndex) {
-        const moonCount = planetType === 'gaseoso' ? 
-            Math.floor(Math.random() * 10) + 5 : // Gigantes gaseosos tienen muchas lunas
-            Math.floor(Math.random() * 3);       // Planetas rocosos tienen pocas lunas
+    // 6. Obtener todos los sistemas explorables
+    async getExplorableSystems() {
+        if (!this.currentUser) return [];
 
-        const moons = [];
-        for (let i = 0; i < moonCount; i++) {
-            moons.push({
-                id: `moon_${planetIndex}_${i}`,
-                name: `Luna ${i + 1}`,
-                mass: Math.random() * 0.1,
-                radius: Math.random() * 0.5,
-                distance: 0.001 + Math.random() * 0.01,
-                orbitalPeriod: 1 + Math.random() * 30,
-                composition: 'rocky'
+        try {
+            const snapshot = await this.db.collection('starSystems')
+                .where('discovery.status', 'in', ['discovered', 'claimed'])
+                .get();
+            
+            return snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+        } catch (error) {
+            console.error('Error obteniendo sistemas explorables:', error);
+            return [];
+        }
+    }
+
+    // 7. Agregar descubridor a un sistema
+    async addDiscovererToSystem(systemId, userId) {
+        try {
+            await this.db.collection('starSystems').doc(systemId).update({
+                'discovery.discoverers': firebase.firestore.FieldValue.arrayUnion(userId),
+                'discovery.status': 'discovered',
+                'publicInfo.lastExplored': new Date()
             });
+            
+            await this.updateUserStatistics('systemsDiscovered', 1);
+            return true;
+        } catch (error) {
+            console.error('Error agregando descubridor:', error);
+            return false;
         }
-        return moons;
     }
 
-    // 7. Determinar tipo de planeta basado en posición
-    determinePlanetType(index, totalPlanets, habitableZone) {
-        const position = index / totalPlanets;
-        
-        if (position < 0.3) return 'rocoso';
-        if (position >= 0.3 && position < 0.6) {
-            // Zona habitable
-            const inHabitableZone = Math.random() > 0.3;
-            return inHabitableZone ? 'oceánico' : 'rocoso';
+    // 8. Buscar sistemas
+    async searchSystems(query, filters = {}) {
+        try {
+            let systemsQuery = this.db.collection('starSystems')
+                .where('discovery.status', 'in', ['discovered', 'claimed']);
+
+            const snapshot = await systemsQuery.get();
+            let systems = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            // Aplicar filtros manualmente
+            if (query) {
+                systems = systems.filter(system => 
+                    system.basicInfo.name.toLowerCase().includes(query.toLowerCase()) ||
+                    system.publicInfo.starType.toLowerCase().includes(query.toLowerCase())
+                );
+            }
+
+            if (filters.starType) {
+                systems = systems.filter(system => 
+                    system.publicInfo.starType === filters.starType
+                );
+            }
+
+            if (filters.minPlanets) {
+                systems = systems.filter(system => 
+                    system.publicInfo.planetCount >= filters.minPlanets
+                );
+            }
+
+            return systems;
+        } catch (error) {
+            console.error('Error buscando sistemas:', error);
+            return [];
         }
-        if (position >= 0.6 && position < 0.8) return 'gaseoso';
-        return 'helado';
     }
 
-    // 8. Calcular distancia orbital
-    calculateOrbitalDistance(index, totalPlanets, habitableZone) {
-        // Ley de Titus-Bode modificada
-        const baseDistance = 0.4;
-        const multiplier = 1.7;
-        
-        if (index === 0) return baseDistance;
-        return baseDistance + (multiplier * Math.pow(2, index - 1));
-    }
-
-    // 9. Generar atmósfera
-    generateAtmosphere(planetType, distance, habitableZone) {
-        const baseAtmosphere = {
-            composition: {},
-            albedo: 0.3,
-            pressure: 1.0,
-            quality: 0.8
-        };
-
-        switch(planetType) {
-            case 'rocoso':
-                if (distance >= habitableZone.inner && distance <= habitableZone.outer) {
-                    baseAtmosphere.composition = { N2: 0.78, O2: 0.21, CO2: 0.01 };
-                } else {
-                    baseAtmosphere.composition = { CO2: 0.95, N2: 0.05 };
-                }
-                break;
-            case 'oceánico':
-                baseAtmosphere.composition = { N2: 0.78, O2: 0.21, H2O: 0.01 };
-                baseAtmosphere.albedo = 0.25;
-                break;
-            case 'gaseoso':
-                baseAtmosphere.composition = { H2: 0.90, He: 0.10 };
-                baseAtmosphere.pressure = 100.0;
-                break;
-            case 'helado':
-                baseAtmosphere.composition = { CO2: 0.95, N2: 0.05 };
-                baseAtmosphere.pressure = 0.1;
-                break;
-        }
-
-        return baseAtmosphere;
+    // 9. Generar coordenada aleatoria
+    generateRandomCoordinate() {
+        return Math.random() * 45000 + 2500; // 2500 - 47500
     }
 
     // 10. Actualizar estadísticas del usuario
@@ -407,7 +428,27 @@ class FirebaseService {
         return unsubscribe;
     }
 
-    // 13. Helper: Obtener cuadrante galáctico
+    // 13. Escuchar sistemas explorables
+    listenToExplorableSystems(callback) {
+        if (!this.currentUser) return;
+
+        const unsubscribe = this.db.collection('starSystems')
+            .where('discovery.status', 'in', ['discovered', 'claimed'])
+            .onSnapshot(snapshot => {
+                const systems = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+                callback(systems);
+            }, error => {
+                console.error('Error escuchando sistemas explorables:', error);
+            });
+
+        this.unsubscribes.push(unsubscribe);
+        return unsubscribe;
+    }
+
+    // 14. Helper: Obtener cuadrante galáctico
     getQuadrant(x, y) {
         const centerX = 25000;
         const centerY = 25000;
@@ -418,7 +459,7 @@ class FirebaseService {
         return 'delta';
     }
 
-    // 14. Helper: Obtener clase espectral
+    // 15. Helper: Obtener clase espectral
     getSpectralClass(starType, mass) {
         const types = {
             'enana_amarilla': 'G',
@@ -430,7 +471,7 @@ class FirebaseService {
         return types[starType] || 'G';
     }
 
-    // 15. Helper: Generar estrellas múltiples
+    // 16. Helper: Generar estrellas múltiples
     generateMultipleStars(systemData) {
         if (systemData.multipleSystem === 'single') return [];
         
@@ -448,7 +489,7 @@ class FirebaseService {
         return stars;
     }
 
-    // 16. Helper: Generar cuerpos menores
+    // 17. Helper: Generar cuerpos menores
     generateMinorBodies(systemData) {
         return [
             {
@@ -466,7 +507,7 @@ class FirebaseService {
         ];
     }
 
-    // 17. Helper: Calcular estabilidad del sistema
+    // 18. Helper: Calcular estabilidad del sistema
     calculateSystemStability(system) {
         let stability = 1.0;
         const planets = system.celestialBodies.planets;
@@ -489,7 +530,7 @@ class FirebaseService {
         return Math.max(0.1, stability);
     }
 
-    // 18. Helper: Números romanos
+    // 19. Helper: Números romanos
     romanize(num) {
         const roman = {
             M: 1000, CM: 900, D: 500, CD: 400, C: 100, XC: 90,
@@ -504,7 +545,86 @@ class FirebaseService {
         return str;
     }
 
-    // 19. Actualizar perfil de usuario
+    // 20. Determinar tipo de planeta basado en posición
+    determinePlanetType(index, totalPlanets, habitableZone) {
+        const position = index / totalPlanets;
+        
+        if (position < 0.3) return 'rocoso';
+        if (position >= 0.3 && position < 0.6) {
+            // Zona habitable
+            const inHabitableZone = Math.random() > 0.3;
+            return inHabitableZone ? 'oceánico' : 'rocoso';
+        }
+        if (position >= 0.6 && position < 0.8) return 'gaseoso';
+        return 'helado';
+    }
+
+    // 21. Calcular distancia orbital
+    calculateOrbitalDistance(index, totalPlanets, habitableZone) {
+        // Ley de Titus-Bode modificada
+        const baseDistance = 0.4;
+        const multiplier = 1.7;
+        
+        if (index === 0) return baseDistance;
+        return baseDistance + (multiplier * Math.pow(2, index - 1));
+    }
+
+    // 22. Generar atmósfera
+    generateAtmosphere(planetType, distance, habitableZone) {
+        const baseAtmosphere = {
+            composition: {},
+            albedo: 0.3,
+            pressure: 1.0,
+            quality: 0.8
+        };
+
+        switch(planetType) {
+            case 'rocoso':
+                if (distance >= habitableZone.inner && distance <= habitableZone.outer) {
+                    baseAtmosphere.composition = { N2: 0.78, O2: 0.21, CO2: 0.01 };
+                } else {
+                    baseAtmosphere.composition = { CO2: 0.95, N2: 0.05 };
+                }
+                break;
+            case 'oceánico':
+                baseAtmosphere.composition = { N2: 0.78, O2: 0.21, H2O: 0.01 };
+                baseAtmosphere.albedo = 0.25;
+                break;
+            case 'gaseoso':
+                baseAtmosphere.composition = { H2: 0.90, He: 0.10 };
+                baseAtmosphere.pressure = 100.0;
+                break;
+            case 'helado':
+                baseAtmosphere.composition = { CO2: 0.95, N2: 0.05 };
+                baseAtmosphere.pressure = 0.1;
+                break;
+        }
+
+        return baseAtmosphere;
+    }
+
+    // 23. Generar lunas para un planeta
+    generateMoons(planetType, planetIndex) {
+        const moonCount = planetType === 'gaseoso' ? 
+            Math.floor(Math.random() * 10) + 5 : // Gigantes gaseosos tienen muchas lunas
+            Math.floor(Math.random() * 3);       // Planetas rocosos tienen pocas lunas
+
+        const moons = [];
+        for (let i = 0; i < moonCount; i++) {
+            moons.push({
+                id: `moon_${planetIndex}_${i}`,
+                name: `Luna ${i + 1}`,
+                mass: Math.random() * 0.1,
+                radius: Math.random() * 0.5,
+                distance: 0.001 + Math.random() * 0.01,
+                orbitalPeriod: 1 + Math.random() * 30,
+                composition: 'rocky'
+            });
+        }
+        return moons;
+    }
+
+    // 24. Actualizar perfil de usuario
     async updateUserProfile(profileData) {
         if (!this.currentUser) return;
         
@@ -519,7 +639,7 @@ class FirebaseService {
         }
     }
 
-    // 20. Eliminar datos de usuario
+    // 25. Eliminar datos de usuario
     async deleteUserData(userId) {
         try {
             await this.db.collection('users').doc(userId).delete();
@@ -530,7 +650,7 @@ class FirebaseService {
         }
     }
 
-    // 21. Limpiar listeners
+    // 26. Limpiar listeners
     cleanup() {
         this.unsubscribes.forEach(unsubscribe => unsubscribe());
         this.unsubscribes = [];
