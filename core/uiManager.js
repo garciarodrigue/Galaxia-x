@@ -78,7 +78,7 @@ class UIManager {
         buttonGroup.insertBefore(searchBtn, exploreBtn.nextSibling);
     }
 
-    // 4. Explorar área actual
+    // 4. Explorar área actual - CORREGIDO
     async exploreCurrentArea() {
         if (!this.gameEngine.currentUser) {
             this.showLoginPrompt();
@@ -88,21 +88,57 @@ class UIManager {
         try {
             this.showLoading('🔭 Explorando área...');
             
-            const discoveredSystems = await this.gameEngine.exploreCurrentArea();
+            // Obtener viewport actual del renderizador
+            const viewport = this.gameEngine.galaxyRenderer.getCurrentViewport();
+            console.log('📍 Explorando viewport:', viewport);
             
-            if (discoveredSystems.length > 0) {
+            // Buscar sistemas en el área visible
+            const allSystems = [...this.gameEngine.userSystems, ...this.gameEngine.explorableSystems];
+            const systemsInViewport = allSystems.filter(system => {
+                const coords = system.basicInfo?.coordinates;
+                if (!coords) return false;
+                
+                const distance = Math.sqrt(
+                    Math.pow(coords.x - viewport.centerX, 2) +
+                    Math.pow(coords.y - viewport.centerY, 2)
+                );
+                
+                return distance <= viewport.radius;
+            });
+
+            console.log('📍 Sistemas en viewport:', systemsInViewport.length);
+
+            // Filtrar sistemas no descubiertos por el usuario actual
+            const undiscoveredSystems = systemsInViewport.filter(system => {
+                return !system.discovery?.discoverers?.includes(this.gameEngine.currentUser.uid);
+            });
+
+            console.log('📍 Sistemas no descubiertos:', undiscoveredSystems.length);
+
+            if (undiscoveredSystems.length > 0) {
+                // Marcar sistemas como descubiertos
+                const discoveryPromises = undiscoveredSystems.map(system => 
+                    this.gameEngine.firebaseService.addDiscovererToSystem(system.id, this.gameEngine.currentUser.uid)
+                );
+                
+                await Promise.all(discoveryPromises);
+                
                 this.showNotification(
-                    `🎉 ¡Descubriste ${discoveredSystems.length} nuevo(s) sistema(s)!`, 
+                    `🎉 ¡Descubriste ${undiscoveredSystems.length} nuevo(s) sistema(s)!`, 
                     'success'
                 );
                 
                 // Mostrar información de los sistemas descubiertos
-                this.showDiscoveryResults(discoveredSystems);
+                this.showDiscoveryResults(undiscoveredSystems);
+                
+                // Actualizar estadísticas
+                await this.updateExplorationStats();
             } else {
                 this.showNotification('🔍 No se encontraron nuevos sistemas en esta área', 'info');
             }
             
         } catch (error) {
+            console.error('❌ Error explorando área:', error);
             this.showNotification(`❌ Error explorando: ${error.message}`, 'error');
         } finally {
             this.hideLoading();
@@ -133,7 +169,7 @@ class UIManager {
                                             <span>•</span>
                                             <span>${system.publicInfo?.planetCount || 0} planetas</span>
                                             <span>•</span>
-                                            <span>${system.publicInfo?.resources || 'Recursos básicos'}</span>
+                                            <span>Creado por: ${system.ownership?.ownerName || 'Usuario'}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -197,6 +233,21 @@ class UIManager {
                                     <input type="number" id="filterMinPlanets" min="1" max="15" value="1">
                                 </div>
                             </div>
+                            
+                            <div class="form-group">
+                                <label>Mostrar:</label>
+                                <div class="checkbox-group">
+                                    <label>
+                                        <input type="checkbox" id="filterMySystems" checked> Mis sistemas
+                                    </label>
+                                    <label>
+                                        <input type="checkbox" id="filterExplored" checked> Sistemas explorados
+                                    </label>
+                                    <label>
+                                        <input type="checkbox" id="filterUnexplored" checked> Sistemas sin explorar
+                                    </label>
+                                </div>
+                            </div>
                         </div>
                         
                         <button id="performSearch" class="btn-primary" style="width: 100%; margin-top: 15px;">
@@ -230,20 +281,42 @@ class UIManager {
         });
     }
 
-    // 8. Realizar búsqueda
+    // 8. Realizar búsqueda - MEJORADO
     async performSearch(modal) {
         try {
             this.showLoading('Buscando sistemas...');
             
-            const query = modal.querySelector('#searchQuery').value;
+            const query = modal.querySelector('#searchQuery').value.toLowerCase();
             const starType = modal.querySelector('#filterStarType').value;
             const minPlanets = parseInt(modal.querySelector('#filterMinPlanets').value) || 1;
+            const showMySystems = modal.querySelector('#filterMySystems').checked;
+            const showExplored = modal.querySelector('#filterExplored').checked;
+            const showUnexplored = modal.querySelector('#filterUnexplored').checked;
             
-            const filters = {};
-            if (starType) filters.starType = starType;
-            if (minPlanets > 1) filters.minPlanets = minPlanets;
+            // Combinar todos los sistemas disponibles
+            const allSystems = [...this.gameEngine.userSystems, ...this.gameEngine.explorableSystems];
             
-            const results = await this.gameEngine.searchSystems(query, filters);
+            let results = allSystems.filter(system => {
+                // Filtro por nombre/tipo
+                const matchesQuery = !query || 
+                    system.basicInfo?.name?.toLowerCase().includes(query) ||
+                    system.publicInfo?.starType?.includes(query);
+                
+                // Filtro por tipo de estrella
+                const matchesStarType = !starType || system.publicInfo?.starType === starType;
+                
+                // Filtro por número de planetas
+                const matchesMinPlanets = system.publicInfo?.planetCount >= minPlanets;
+                
+                // Filtro por estado
+                const systemStatus = this.getSystemStatus(system);
+                const matchesStatus = 
+                    (showMySystems && systemStatus === 'Tu sistema') ||
+                    (showExplored && systemStatus === 'Explorado') ||
+                    (showUnexplored && systemStatus === 'No explorado');
+                
+                return matchesQuery && matchesStarType && matchesMinPlanets && matchesStatus;
+            });
             
             this.displaySearchResults(modal, results);
             
@@ -286,8 +359,8 @@ class UIManager {
                         <span class="value">${system.publicInfo?.planetCount || 0}</span>
                     </div>
                     <div class="detail">
-                        <span class="label">Descubridores:</span>
-                        <span class="value">${system.discovery?.discoverers?.length || 0}</span>
+                        <span class="label">Creador:</span>
+                        <span class="value">${system.ownership?.ownerName || 'Desconocido'}</span>
                     </div>
                     <div class="detail">
                         <span class="label">Estado:</span>
@@ -301,6 +374,11 @@ class UIManager {
                     <button class="btn-small btn-secondary" onclick="window.gameEngine.uiManager.showSystemInfoFromId('${system.id}')">
                         ℹ️ Info
                     </button>
+                    ${this.getSystemStatus(system) === 'No explorado' ? `
+                        <button class="btn-small btn-success" onclick="window.gameEngine.uiManager.exploreSystem('${system.id}')">
+                            🔍 Explorar
+                        </button>
+                    ` : ''}
                 </div>
             </div>
         `).join('');
@@ -313,7 +391,7 @@ class UIManager {
             const allSystems = [...this.gameEngine.userSystems, ...this.gameEngine.explorableSystems];
             const system = allSystems.find(s => s.id === systemId);
             
-            if (system) {
+            if (system && system.basicInfo?.coordinates) {
                 this.gameEngine.galaxyRenderer.centerOn(
                     system.basicInfo.coordinates.x,
                     system.basicInfo.coordinates.y
@@ -321,7 +399,7 @@ class UIManager {
                 this.hideCurrentModal();
                 this.showNotification(`🎯 Centrado en ${system.basicInfo.name}`, 'success');
             } else {
-                this.showNotification('Sistema no encontrado', 'error');
+                this.showNotification('Sistema no encontrado o sin coordenadas', 'error');
             }
         } catch (error) {
             this.showNotification(`Error: ${error.message}`, 'error');
@@ -397,6 +475,10 @@ class UIManager {
             <div class="info-row">
                 <span class="text-gray-300">Progreso:</span>
                 <span class="font-bold text-blue-400">${(stats.explorationPercentage || 0).toFixed(1)}%</span>
+            </div>
+            <div class="info-row">
+                <span class="text-gray-300">Creados:</span>
+                <span class="font-bold text-yellow-400">${this.gameEngine.userSystems.length}</span>
             </div>
         `;
     }
@@ -587,6 +669,9 @@ class UIManager {
             this.hideModal('createSystemModal');
             this.showNotification('✅ Sistema creado exitosamente!', 'success');
             
+            // Actualizar estadísticas después de crear sistema
+            await this.updateExplorationStats();
+            
         } catch (error) {
             this.showNotification(`❌ Error: ${error.message}`, 'error');
         } finally {
@@ -669,6 +754,24 @@ class UIManager {
                 </div>
 
                 <div class="info-section">
+                    <h3>📊 Información del Sistema</h3>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="label">Creador:</span>
+                            <span class="value">${system.ownership?.ownerName || 'Desconocido'}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">Fecha creación:</span>
+                            <span class="value">${system.basicInfo?.creationDate ? new Date(system.basicInfo.creationDate).toLocaleDateString() : 'Desconocida'}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">Coordenadas:</span>
+                            <span class="value">X: ${system.basicInfo?.coordinates?.x || 0}, Y: ${system.basicInfo?.coordinates?.y || 0}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="info-section">
                     <h3>📊 Descubrimiento</h3>
                     <div class="discovery-info">
                         <div class="discovery-stat">
@@ -676,7 +779,7 @@ class UIManager {
                             <span class="value">${system.discovery?.discoverers?.length || 0}</span>
                         </div>
                         <div class="discovery-stat">
-                            <span class="label">Fecha:</span>
+                            <span class="label">Fecha descubrimiento:</span>
                             <span class="value">${system.discovery?.discoveryDate ? new Date(system.discovery.discoveryDate).toLocaleDateString() : 'No descubierto'}</span>
                         </div>
                         <div class="discovery-stat">
@@ -703,6 +806,12 @@ class UIManager {
                         <button onclick="window.gameEngine.uiManager.exploreSystem('${system.id}')" 
                                 class="btn-secondary">
                             🔍 Explorar Sistema
+                        </button>
+                    ` : ''}
+                    ${isOwned ? `
+                        <button onclick="window.gameEngine.uiManager.manageSystem('${system.id}')" 
+                                class="btn-warning">
+                            ⚙️ Gestionar
                         </button>
                     ` : ''}
                 </div>
@@ -761,9 +870,11 @@ class UIManager {
         return population.toString();
     }
 
-    // 28. Explorar sistema específico
+    // 28. Explorar sistema específico - CORREGIDO
     async exploreSystem(systemId) {
         try {
+            this.showLoading('Explorando sistema...');
+            
             const success = await this.gameEngine.firebaseService.addDiscovererToSystem(
                 systemId, 
                 this.gameEngine.currentUser.uid
@@ -772,16 +883,31 @@ class UIManager {
             if (success) {
                 this.showNotification('✅ ¡Sistema explorado!', 'success');
                 this.hideModal('systemInfoModal');
+                
+                // Actualizar estadísticas
                 await this.updateExplorationStats();
+                
+                // Recargar sistemas explorables
+                await this.gameEngine.loadAllSystems();
             } else {
                 this.showNotification('❌ Error explorando el sistema', 'error');
             }
         } catch (error) {
+            console.error('❌ Error explorando sistema:', error);
             this.showNotification(`❌ Error: ${error.message}`, 'error');
+        } finally {
+            this.hideLoading();
         }
     }
 
-    // 29. Mostrar modal de inicio de sesión
+    // 29. Gestionar sistema (para el propietario)
+    async manageSystem(systemId) {
+        this.showNotification('⚙️ Funcionalidad de gestión en desarrollo', 'info');
+    }
+
+    // ... (resto de métodos de autenticación y UI se mantienen igual)
+
+    // 30. Mostrar modal de inicio de sesión
     showLoginModal() {
         const modal = document.createElement('div');
         modal.className = 'modal active';
@@ -828,7 +954,7 @@ class UIManager {
         this.setupLoginListeners(modal);
     }
 
-    // 30. Configurar listeners del login
+    // 31. Configurar listeners del login
     setupLoginListeners(modal) {
         // Login con Google
         modal.querySelector('#googleLoginBtn').addEventListener('click', async () => {
@@ -885,7 +1011,7 @@ class UIManager {
         });
     }
 
-    // 31. Mostrar modal de registro
+    // 32. Mostrar modal de registro
     showRegisterModal(loginModal) {
         loginModal.remove();
         
@@ -966,13 +1092,13 @@ class UIManager {
         });
     }
 
-    // 32. Mostrar prompt de login
+    // 33. Mostrar prompt de login
     showLoginPrompt() {
         this.showNotification('🔐 Por favor inicia sesión para explorar', 'info');
         this.showLoginModal();
     }
 
-    // 33. Mostrar modal
+    // 34. Mostrar modal
     showModal(modalId) {
         this.hideCurrentModal();
         
@@ -983,7 +1109,7 @@ class UIManager {
         }
     }
 
-    // 34. Ocultar modal
+    // 35. Ocultar modal
     hideModal(modalId) {
         const modal = document.getElementById(modalId);
         if (modal) {
@@ -994,14 +1120,14 @@ class UIManager {
         }
     }
 
-    // 35. Ocultar modal actual
+    // 36. Ocultar modal actual
     hideCurrentModal() {
         if (this.currentModal) {
             this.hideModal(this.currentModal);
         }
     }
 
-    // 36. Mostrar notificación
+    // 37. Mostrar notificación
     showNotification(message, type = 'info') {
         // Crear elemento de notificación
         const notification = document.createElement('div');
@@ -1045,7 +1171,7 @@ class UIManager {
         });
     }
 
-    // 37. Obtener color de notificación
+    // 38. Obtener color de notificación
     getNotificationColor(type) {
         const colors = {
             success: '#10B981',
@@ -1056,7 +1182,7 @@ class UIManager {
         return colors[type] || colors.info;
     }
 
-    // 38. Actualizar estado de autenticación
+    // 39. Actualizar estado de autenticación
     updateAuthState(isAuthenticated, user = null) {
         const loginBtn = document.getElementById('loginBtn');
         
@@ -1073,7 +1199,7 @@ class UIManager {
         }
     }
 
-    // 39. Actualizar año galáctico
+    // 40. Actualizar año galáctico
     updateGalacticYear(year) {
         const yearElement = document.getElementById('galacticYear');
         if (yearElement) {
@@ -1081,7 +1207,7 @@ class UIManager {
         }
     }
 
-    // 40. Actualizar lista de sistemas
+    // 41. Actualizar lista de sistemas
     updateSystemsList(systems) {
         const worldsElement = document.getElementById('playerWorlds');
         if (worldsElement) {
@@ -1089,13 +1215,13 @@ class UIManager {
         }
     }
 
-    // 41. Mostrar carga
+    // 42. Mostrar carga
     showLoading(message = 'Cargando...') {
         // Implementación básica - podrías usar un spinner
         console.log('Loading:', message);
     }
 
-    // 42. Ocultar carga
+    // 43. Ocultar carga
     hideLoading() {
         console.log('Loading complete');
     }
